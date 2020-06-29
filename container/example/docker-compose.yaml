@@ -1,0 +1,15 @@
+---
+version: '3'
+
+services: 
+  image: no42org/ioquake3:8c8509ba
+  container_name: ioquake3
+  volumes:
+    - "./baseq3-overlay:/baseq3-overlay"
+    ## If you want to add some mods
+    # - "./missionpack:/opt/ioq3-linux-x86_64/missionpack"
+    # - "./arena:/opt/ioq3-linux-x86_64/arena"
+    # - "./osp:/opt/ioq3-linux-x86_64/osp"
+  command: [ "+exec", "server.cfg", "+exec", "levels.cfg", "+exec", "game-type.cfg", "+exec", "game-settings.cfg", "+exec", "bots.cfg" ]
+  ports:
+    - "27960:27960/udp"
