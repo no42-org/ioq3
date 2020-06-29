@@ -1,0 +1,105 @@
+---
+version: 2.1
+
+executors:
+  docker-executor:
+    docker:
+      - image: circleci/buildpack-deps:focal
+
+commands:
+  registry_login:
+    description: Login Container Registry
+    steps:
+      - run:
+          name: Login Container Registry
+          command: |
+            echo "${CONTAINER_REGISTRY_PASS}" | docker login --username ${CONTAINER_REGISTRY_LOGIN} --password-stdin
+
+jobs:
+  build:
+    executor: docker-executor
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: false
+      - run:
+          name: Prepare build environment
+          command: |
+            sudo apt-get -y install libsdl2-dev
+            git describe --always > version.txt
+      - run:
+          name: Compile source code
+          command: |
+            make
+      - run: 
+          name: Archive build artifacts
+          command: |
+            mv build/release-linux-x86_64 build/ioq3-linux-x86_64
+            tar czf ./ioq3-linux-x86_64.tar.gz2 -C ./build ioq3-linux-x86_64
+
+      - store_artifacts:
+          path: version.txt
+      - store_artifacts:
+          path: ioq3-linux-x86_64.tar.gz2
+      - persist_to_workspace:
+          root: ~/project
+          paths:
+            - container
+            - version.txt
+            - ioq3-linux-x86_64.tar.gz2
+
+  oci-build:
+    executor: docker-executor
+    steps:
+      - attach_workspace:
+          at: ~/project
+      - setup_remote_docker:
+          docker_layer_caching: false
+      - run:
+          name: Create Docker OCI
+          command: |
+            cp ioq3-linux-x86_64.tar.gz2 container
+            cd container
+            docker build -t ioquake3 .
+            docker image save ioquake3 -o ../image.oci
+      - store_artifacts:
+          path: image.oci
+      - persist_to_workspace:
+          root: ~/project
+          paths:
+            - image.oci
+
+  oci-publish:
+    executor: docker-executor
+    steps:
+      - attach_workspace:
+          at: ~/project
+      - setup_remote_docker:
+          docker_layer_caching: false
+      - registry_login
+      - run:
+          name: Load Docker Image
+          command: |
+            docker image load -i ./image.oci
+      - run:
+          name: Tag OCI
+          command: |
+            docker tag no42org/ioquake3:$(cat version.txt)
+      - run:
+          name: Push OCI to registry
+          command: |
+            docker push no42org/ioquake3:$(cat version.txt)
+workflows:
+  commit:
+    jobs:
+      - build
+      - oci-build:
+          requires:
+            - build
+      - oci-publish:
+          requires:
+            - oci-build
+          filters:
+            branches:
+              only:
+                - master
